@@ -1,145 +1,19 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Viewer</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #f0f0f0;
-            font-family: Arial, sans-serif;
-        }
-        
-        .header {
-            background: #2c3e50;
-            color: white;
-            padding: 10px;
-            text-align: center;
-        }
-        
-        .pdf-container {
-            width: 100vw;
-            height: calc(100vh - 60px);
-        }
-        
-        .pdf-viewer {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100%;
-            font-size: 18px;
-        }
-        
-        .error {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100%;
-            color: red;
-            text-align: center;
-            padding: 20px;
-        }
-    </style>
+    <title>PDF Test</title>
 </head>
 <body>
-    <div class="header">
-        <h1>PDF Viewer</h1>
-    </div>
-    
-    <div class="pdf-container">
-        <div id="pdfContainer" class="loading">
-            Загрузка PDF...
-        </div>
-    </div>
-
     <script>
-        // Получаем параметр pdf_url из URL
-        function getPdfUrl() {
-            const urlParams = new URLSearchParams(window.location.search);
-            let pdfUrl = urlParams.get('pdf_url');
-            
-            if (pdfUrl) {
-                // Декодируем URL если нужно
-                try {
-                    pdfUrl = decodeURIComponent(pdfUrl);
-                } catch (e) {
-                    // Если не нужно декодировать, оставляем как есть
-                }
-            }
-            
-            return pdfUrl;
+        // Просто редирект на PDF
+        const urlParams = new URLSearchParams(window.location.search);
+        const pdfUrl = urlParams.get('pdf_url');
+        
+        if (pdfUrl) {
+            window.location.href = pdfUrl;
+        } else {
+            document.body.innerHTML = 'No pdf_url parameter';
         }
-
-        // Загружаем PDF
-        function loadPdf(pdfUrl) {
-            const container = document.getElementById('pdfContainer');
-            
-            console.log('Загружаем PDF:', pdfUrl);
-            
-            // Создаем iframe для отображения PDF
-            const iframe = document.createElement('iframe');
-            iframe.className = 'pdf-viewer';
-            
-            // Простые параметры для PDF viewer
-            iframe.src = pdfUrl + '#toolbar=0&navpanes=0';
-            
-            iframe.onload = function() {
-                console.log('PDF загружен успешно');
-                container.innerHTML = '';
-                container.appendChild(iframe);
-            };
-            
-            iframe.onerror = function() {
-                console.error('Ошибка загрузки PDF');
-                showError('Не удалось загрузить PDF файл');
-            };
-            
-            // Добавляем iframe сразу
-            container.innerHTML = '';
-            container.appendChild(iframe);
-        }
-
-        // Показать ошибку
-        function showError(message) {
-            const container = document.getElementById('pdfContainer');
-            container.className = 'error';
-            container.innerHTML = `
-                <div>
-                    <h3>Ошибка</h3>
-                    <p>${message}</p>
-                    <button onclick="location.reload()">Обновить</button>
-                </div>
-            `;
-        }
-
-        // Основная функция
-        function init() {
-            const pdfUrl = getPdfUrl();
-            
-            if (!pdfUrl) {
-                showError('Не указан параметр pdf_url');
-                return;
-            }
-            
-            // Простая проверка на PDF
-            if (!pdfUrl.toLowerCase().includes('.pdf')) {
-                showError('Ссылка должна вести на PDF файл');
-                return;
-            }
-            
-            loadPdf(pdfUrl);
-        }
-
-        // Запускаем при загрузке
-        document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>
