@@ -24,19 +24,17 @@
     <iframe id="pdfFrame" src=""></iframe>
 
     <script>
-        // Получаем PDF URL из параметра
         const urlParams = new URLSearchParams(window.location.search);
         let pdfUrl = urlParams.get('pdf_url');
         
         if (pdfUrl) {
-            // Декодируем URL если нужно
             try {
                 pdfUrl = decodeURIComponent(pdfUrl);
             } catch (e) {}
             
-            // Используем Google Docs Viewer для отображения PDF
-            const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(pdfUrl)}&embedded=true`;
-            document.getElementById('pdfFrame').src = googleViewerUrl;
+            // Используем Microsoft Office Online Viewer
+            const msViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(pdfUrl)}`;
+            document.getElementById('pdfFrame').src = msViewerUrl;
         }
     </script>
 </body>
