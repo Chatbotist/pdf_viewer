@@ -32,9 +32,8 @@
                 pdfUrl = decodeURIComponent(pdfUrl);
             } catch (e) {}
             
-            // Используем Microsoft Office Online Viewer
-            const msViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(pdfUrl)}`;
-            document.getElementById('pdfFrame').src = msViewerUrl;
+            // Прямое открытие в iframe (работает в некоторых браузерах)
+            document.getElementById('pdfFrame').src = pdfUrl;
         }
     </script>
 </body>
