@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body, html {
             margin: 0;
@@ -11,30 +12,183 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
+            background: #f0f0f0;
         }
         
-        #pdfFrame {
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            height: 50px;
+        }
+        
+        #pdfContainer {
             width: 100%;
+            height: calc(100% - 50px);
+            overflow: auto;
+        }
+        
+        .canvas-container {
+            text-align: center;
+            margin: 0 auto;
+            padding: 10px;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
             height: 100%;
+            font-size: 18px;
+        }
+        
+        .controls {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .controls button {
+            background: white;
             border: none;
+            padding: 8px 15px;
+            border-radius: 15px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <iframe id="pdfFrame" src=""></iframe>
+    <div class="header">
+        <h1>PDF Viewer</h1>
+    </div>
+    
+    <div id="pdfContainer" class="loading">
+        Загрузка PDF...
+    </div>
+    
+    <div class="controls" id="controls" style="display: none;">
+        <button onclick="prevPage()">← Назад</button>
+        <span id="pageInfo">Страница 1 из 1</span>
+        <button onclick="nextPage()">Вперед →</button>
+    </div>
 
     <script>
+        // Настройка PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        let currentPdf = null;
+        let currentPage = 1;
+        let pageCount = 0;
+        
+        // Получаем PDF URL из параметра
         const urlParams = new URLSearchParams(window.location.search);
         let pdfUrl = urlParams.get('pdf_url');
         
-        if (pdfUrl) {
+        if (!pdfUrl) {
+            document.getElementById('pdfContainer').innerHTML = '<div class="error">Ошибка: не указан pdf_url</div>';
+        } else {
+            // Декодируем URL если нужно
             try {
                 pdfUrl = decodeURIComponent(pdfUrl);
             } catch (e) {}
             
-            // Прямое открытие в iframe (работает в некоторых браузерах)
-            document.getElementById('pdfFrame').src = pdfUrl;
+            loadPdf(pdfUrl);
         }
+        
+        async function loadPdf(url) {
+            try {
+                console.log('Загрузка PDF:', url);
+                
+                // Загружаем PDF
+                const loadingTask = pdfjsLib.getDocument(url);
+                currentPdf = await loadingTask.promise;
+                
+                pageCount = currentPdf.numPages;
+                console.log('PDF загружен, страниц:', pageCount);
+                
+                // Показываем первую страницу
+                await renderPage(1);
+                showControls();
+                
+            } catch (error) {
+                console.error('Ошибка загрузки PDF:', error);
+                document.getElementById('pdfContainer').innerHTML = 
+                    '<div class="error">Ошибка загрузки PDF: ' + error.message + '</div>';
+            }
+        }
+        
+        async function renderPage(pageNum) {
+            if (!currentPdf || pageNum < 1 || pageNum > pageCount) return;
+            
+            const container = document.getElementById('pdfContainer');
+            container.innerHTML = '<div class="loading">Загрузка страницы...</div>';
+            
+            try {
+                const page = await currentPdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.5 });
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                await page.render(renderContext).promise;
+                
+                // Очищаем контейнер и добавляем canvas
+                container.innerHTML = '';
+                const canvasContainer = document.createElement('div');
+                canvasContainer.className = 'canvas-container';
+                canvasContainer.appendChild(canvas);
+                container.appendChild(canvasContainer);
+                
+                currentPage = pageNum;
+                updatePageInfo();
+                
+            } catch (error) {
+                console.error('Ошибка рендеринга страницы:', error);
+                container.innerHTML = '<div class="error">Ошибка отображения страницы</div>';
+            }
+        }
+        
+        function showControls() {
+            if (pageCount > 1) {
+                document.getElementById('controls').style.display = 'flex';
+            }
+        }
+        
+        function updatePageInfo() {
+            document.getElementById('pageInfo').textContent = `Страница ${currentPage} из ${pageCount}`;
+        }
+        
+        function nextPage() {
+            if (currentPage < pageCount) {
+                renderPage(currentPage + 1);
+            }
+        }
+        
+        function prevPage() {
+            if (currentPage > 1) {
+                renderPage(currentPage - 1);
+            }
+        }
+        
+        // Навигация клавишами
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight') nextPage();
+            if (e.key === 'ArrowLeft') prevPage();
+        });
     </script>
 </body>
 </html>
