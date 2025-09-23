@@ -1,18 +1,42 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>PDF Test</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        #pdfFrame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
 </head>
 <body>
+    <iframe id="pdfFrame" src=""></iframe>
+
     <script>
-        // Просто редирект на PDF
+        // Получаем PDF URL из параметра
         const urlParams = new URLSearchParams(window.location.search);
-        const pdfUrl = urlParams.get('pdf_url');
+        let pdfUrl = urlParams.get('pdf_url');
         
         if (pdfUrl) {
-            window.location.href = pdfUrl;
-        } else {
-            document.body.innerHTML = 'No pdf_url parameter';
+            // Декодируем URL если нужно
+            try {
+                pdfUrl = decodeURIComponent(pdfUrl);
+            } catch (e) {}
+            
+            // Используем Google Docs Viewer для отображения PDF
+            const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(pdfUrl)}&embedded=true`;
+            document.getElementById('pdfFrame').src = googleViewerUrl;
         }
     </script>
 </body>
