@@ -43,24 +43,27 @@
             border-bottom: 1px solid rgba(255,255,255,0.1);
             backdrop-filter: blur(10px);
             padding-top: env(safe-area-inset-top);
-            box-sizing: content-box;
+            box-sizing: border-box;
         }
         
         .header-content {
-            padding: 0 20px;
             text-align: center;
         }
         
         #pdfContainer {
-            position: fixed;
+            position: absolute;
             top: calc(50px + env(safe-area-inset-top, 0px));
             left: 0;
             width: 100%;
             height: calc(100% - 50px - env(safe-area-inset-top, 0px));
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 10px 0;
             -webkit-overflow-scrolling: touch;
+        }
+        
+        .pages-wrapper {
+            padding: 10px 0;
+            min-height: 100%;
             box-sizing: border-box;
         }
         
@@ -94,9 +97,7 @@
             flex-direction: column;
             gap: 12px;
             color: white;
-            padding: 0 20px;
             text-align: center;
-            box-sizing: border-box;
         }
         
         .spinner {
@@ -110,7 +111,7 @@
         
         .progress {
             position: fixed;
-            top: calc(70px + env(safe-area-inset-top, 0px));
+            top: calc(60px + env(safe-area-inset-top, 0px));
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0,0,0,0.9);
@@ -121,7 +122,6 @@
             z-index: 100;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.1);
-            white-space: nowrap;
         }
         
         .error {
@@ -133,7 +133,6 @@
             text-align: center;
             padding: 20px;
             flex-direction: column;
-            box-sizing: border-box;
         }
         
         .page-info {
@@ -141,7 +140,7 @@
             color: #888;
             font-size: 13px;
             padding: 15px 10px;
-            margin-top: 10px;
+            margin: 10px 0;
         }
         
         /* Адаптация под разные экраны */
@@ -151,17 +150,13 @@
                 font-size: 15px;
             }
             
-            .header-content {
-                padding: 0 15px;
-            }
-            
             #pdfContainer {
                 top: calc(45px + env(safe-area-inset-top, 0px));
                 height: calc(100% - 45px - env(safe-area-inset-top, 0px));
             }
             
             .progress {
-                top: calc(65px + env(safe-area-inset-top, 0px));
+                top: calc(55px + env(safe-area-inset-top, 0px));
                 font-size: 13px;
                 padding: 8px 16px;
             }
@@ -184,26 +179,17 @@
             }
             
             .progress {
-                top: calc(75px + env(safe-area-inset-top, 0px));
+                top: calc(65px + env(safe-area-inset-top, 0px));
             }
             
             .page-container {
                 padding: 0 15px;
                 margin-bottom: 20px;
             }
-            
-            .page-container canvas {
-                max-width: 90%;
-            }
         }
         
-        /* Поддержка iPhone X+ с выемкой */
+        /* Поддержка безопасных зон */
         @supports(padding: max(0px)) {
-            .header {
-                padding-left: max(0px, env(safe-area-inset-left));
-                padding-right: max(0px, env(safe-area-inset-right));
-            }
-            
             .page-container {
                 padding-left: max(10px, env(safe-area-inset-left));
                 padding-right: max(10px, env(safe-area-inset-right));
@@ -215,7 +201,6 @@
             100% { transform: rotate(360deg); }
         }
         
-        /* Улучшение скролла на iOS */
         #pdfContainer::-webkit-scrollbar {
             display: none;
         }
@@ -230,9 +215,11 @@
         Загрузка: 0%
     </div>
     
-    <div id="pdfContainer" class="loading">
-        <div class="spinner"></div>
-        <div>Загрузка PDF...</div>
+    <div id="pdfContainer">
+        <div class="loading">
+            <div class="spinner"></div>
+            <div>Загрузка PDF...</div>
+        </div>
     </div>
 
     <script>
@@ -268,7 +255,7 @@
             return `/api/proxy?url=${encodedUrl}`;
         }
         
-        // Автоматическое определение масштаба для мобильных
+        // Автоматическое определение масштаба
         function getScaleForMobile() {
             const screenWidth = window.innerWidth;
             if (screenWidth <= 320) return 1.0;
@@ -312,24 +299,27 @@
         
         async function renderAllPages() {
             const container = document.getElementById('pdfContainer');
+            
+            // Создаем обертку для страниц
+            const pagesWrapper = document.createElement('div');
+            pagesWrapper.className = 'pages-wrapper';
             container.innerHTML = '';
-            container.style.overflowY = 'auto';
+            container.appendChild(pagesWrapper);
             
             const scale = getScaleForMobile();
+            
+            // Сначала рендерим все страницы, потом добавляем в DOM
+            const pageContainers = [];
             
             for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
                 try {
                     const page = await currentPdf.getPage(pageNum);
                     const viewport = page.getViewport({ scale: scale });
                     
-                    const pageContainer = document.createElement('div');
-                    pageContainer.className = 'page-container';
-                    
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     canvas.height = viewport.height;
                     canvas.width = viewport.width;
-                    
                     canvas.style.width = '100%';
                     canvas.style.height = 'auto';
                     
@@ -340,29 +330,39 @@
                     
                     await page.render(renderContext).promise;
                     
+                    const pageContainer = document.createElement('div');
+                    pageContainer.className = 'page-container';
                     pageContainer.appendChild(canvas);
-                    container.appendChild(pageContainer);
+                    pageContainers.push(pageContainer);
                     
                     loadedPages++;
                     updateProgress(Math.round((loadedPages / totalPages) * 100));
                     
-                    if (pageNum % 3 === 0) {
-                        await new Promise(resolve => setTimeout(resolve, 50));
-                    }
+                    // Небольшая пауза для плавности
+                    await new Promise(resolve => setTimeout(resolve, 30));
                     
                 } catch (error) {
                     console.error(`Ошибка рендеринга страницы ${pageNum}:`, error);
                 }
             }
             
-            document.getElementById('progress').style.display = 'none';
+            // Добавляем все страницы в DOM за один раз
+            pageContainers.forEach((container, index) => {
+                if (index === 0) {
+                    container.style.marginTop = '10px';
+                }
+                pagesWrapper.appendChild(container);
+            });
             
+            // Добавляем информацию о документе
             const info = document.createElement('div');
             info.className = 'page-info';
             info.textContent = `Документ загружен • ${totalPages} страниц`;
-            container.appendChild(info);
+            pagesWrapper.appendChild(info);
             
-            // Прокрутка к началу контента
+            document.getElementById('progress').style.display = 'none';
+            
+            // Прокрутка к началу
             setTimeout(() => {
                 container.scrollTo({ top: 0, behavior: 'smooth' });
             }, 100);
@@ -374,6 +374,7 @@
         
         function showError(message) {
             const container = document.getElementById('pdfContainer');
+            container.innerHTML = '';
             container.className = 'error';
             container.innerHTML = `
                 <h3 style="margin-bottom: 15px;">Ошибка</h3>
@@ -382,7 +383,7 @@
             `;
         }
         
-        // Оптимизация для мобильных
+        // Обработка смены ориентации
         window.addEventListener('orientationchange', function() {
             setTimeout(() => {
                 window.location.reload();
@@ -391,14 +392,6 @@
         
         // Предотвращение масштабирования жестом
         document.addEventListener('gesturestart', function(e) {
-            e.preventDefault();
-        });
-        
-        document.addEventListener('gesturechange', function(e) {
-            e.preventDefault();
-        });
-        
-        document.addEventListener('gestureend', function(e) {
             e.preventDefault();
         });
     </script>
