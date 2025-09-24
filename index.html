@@ -313,46 +313,10 @@
         // Автоматическое определение масштаба для разворота (двух страниц)
         function getScaleForSpread() {
             const screenWidth = window.innerWidth;
-            if (screenWidth <= 320) return 0.4;
-            if (screenWidth <= 414) return 0.5;
-            if (screenWidth <= 768) return 0.6;
-            return 0.7;
-        }
-        
-        // Создание разворота из двух страниц
-        async function createSpreadCanvas(page1, page2, scale) {
-            const viewport1 = page1.getViewport({ scale: scale });
-            const viewport2 = page2 ? page2.getViewport({ scale: scale }) : null;
-            
-            // Ширина разворота = ширина двух страниц + небольшой отступ
-            const spreadWidth = viewport1.width + (viewport2 ? viewport2.width + 10 : 0);
-            const spreadHeight = Math.max(viewport1.height, viewport2 ? viewport2.height : 0);
-            
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = spreadWidth;
-            canvas.height = spreadHeight;
-            canvas.style.width = '100%';
-            canvas.style.height = 'auto';
-            
-            // Рендерим первую страницу
-            const renderContext1 = {
-                canvasContext: ctx,
-                viewport: viewport1
-            };
-            await page1.render(renderContext1).promise;
-            
-            // Рендерим вторую страницу справа от первой
-            if (viewport2) {
-                ctx.translate(viewport1.width + 10, 0);
-                const renderContext2 = {
-                    canvasContext: ctx,
-                    viewport: viewport2
-                };
-                await page2.render(renderContext2).promise;
-            }
-            
-            return canvas;
+            if (screenWidth <= 320) return 0.45; // Меньше масштаб для двух страниц
+            if (screenWidth <= 414) return 0.55;
+            if (screenWidth <= 768) return 0.65;
+            return 0.75;
         }
         
         const urlParams = new URLSearchParams(window.location.search);
@@ -400,35 +364,73 @@
             const scale = getScaleForSpread();
             const totalSpreads = Math.ceil(totalPages / 2);
             
-            const spreadContainers = [];
+            const pageContainers = [];
             
             for (let spreadNum = 1; spreadNum <= totalSpreads; spreadNum++) {
                 try {
                     // Для каждого разворота берем две страницы
-                    const page1Num = (spreadNum - 1) * 2 + 1;
-                    const page2Num = page1Num + 1;
-                    
-                    // Загружаем страницы
-                    const page1 = await currentPdf.getPage(page1Num);
-                    const page2 = page2Num <= totalPages ? await currentPdf.getPage(page2Num) : null;
-                    
-                    // Создаем разворот (одну картинку из двух страниц)
-                    const spreadCanvas = await createSpreadCanvas(page1, page2, scale);
+                    const startPage = (spreadNum - 1) * 2 + 1;
+                    const endPage = Math.min(startPage + 1, totalPages);
                     
                     // Создаем контейнер для разворота
-                    const spreadContainer = document.createElement('div');
-                    spreadContainer.className = 'page-container';
+                    const pageContainer = document.createElement('div');
+                    pageContainer.className = 'page-container';
                     
                     // Добавляем подпись НАД разворотом
                     const caption = document.createElement('div');
                     caption.className = 'page-caption';
                     caption.textContent = createCaption(spreadNum, totalPages);
-                    spreadContainer.appendChild(caption);
+                    pageContainer.appendChild(caption);
                     
-                    // Добавляем canvas с разворотом
-                    spreadContainer.appendChild(spreadCanvas);
+                    // Рендерим первую страницу разворота
+                    const page1 = await currentPdf.getPage(startPage);
+                    const viewport1 = page1.getViewport({ scale: scale });
                     
-                    spreadContainers.push(spreadContainer);
+                    // Рендерим вторую страницу разворота (если существует)
+                    let viewport2 = null;
+                    let page2 = null;
+                    
+                    if (endPage > startPage) {
+                        page2 = await currentPdf.getPage(endPage);
+                        viewport2 = page2.getViewport({ scale: scale });
+                    }
+                    
+                    // Создаем canvas для разворота (двух страниц)
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Рассчитываем размеры canvas для двух страниц
+                    const totalWidth = viewport1.width + (viewport2 ? viewport2.width : 0);
+                    const maxHeight = Math.max(viewport1.height, viewport2 ? viewport2.height : 0);
+                    
+                    canvas.width = totalWidth;
+                    canvas.height = maxHeight;
+                    canvas.style.width = '100%';
+                    canvas.style.height = 'auto';
+                    
+                    // Рендерим первую страницу
+                    const renderContext1 = {
+                        canvasContext: ctx,
+                        viewport: viewport1
+                    };
+                    await page1.render(renderContext1).promise;
+                    
+                    // Рендерим вторую страницу (если есть) справа от первой
+                    if (page2 && viewport2) {
+                        ctx.save();
+                        ctx.translate(viewport1.width, 0);
+                        
+                        const renderContext2 = {
+                            canvasContext: ctx,
+                            viewport: viewport2
+                        };
+                        await page2.render(renderContext2).promise;
+                        
+                        ctx.restore();
+                    }
+                    
+                    pageContainer.appendChild(canvas);
+                    pageContainers.push(pageContainer);
                     
                     updateProgress(Math.round((spreadNum / totalSpreads) * 100));
                     
@@ -440,8 +442,8 @@
                 }
             }
             
-            // Добавляем все развороты в DOM
-            spreadContainers.forEach((container, index) => {
+            // Добавляем все развороты в DOM за один раз
+            pageContainers.forEach((container, index) => {
                 if (index === 0) {
                     container.style.marginTop = '10px';
                 }
