@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Viewer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body, html {
             margin: 0;
@@ -14,6 +15,12 @@
             overflow: hidden;
             background: #f0f0f0;
             font-family: Arial, sans-serif;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
         }
         
         #pdfContainer {
@@ -29,6 +36,7 @@
             max-width: 95%;
             max-height: 95%;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            pointer-events: none;
         }
         
         .loading {
@@ -55,7 +63,7 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.9);
             color: white;
             padding: 12px 24px;
             border-radius: 25px;
@@ -63,6 +71,7 @@
             gap: 20px;
             align-items: center;
             font-size: 16px;
+            backdrop-filter: blur(10px);
         }
         
         .controls button {
@@ -106,10 +115,98 @@
     <div class="controls" id="controls" style="display: none;">
         <button id="prevBtn" onclick="prevPage()">Назад</button>
         <span id="pageInfo">Разворот 1 из 1</span>
-        <button id="nextBtn" onclick="nextPage()">Вперед</button>
+        <button id="nextBtn" onclick="nextPage()">Дальше</button>
     </div>
 
     <script>
+        // Инициализация Telegram Web App
+        let tg = null;
+        if (window.Telegram && window.Telegram.WebApp) {
+            tg = window.Telegram.WebApp;
+            tg.expand();
+            tg.enableClosingConfirmation();
+            tg.disableVerticalSwipes();
+        }
+
+        // Защита от копирования и скачивания
+        function enableProtection() {
+            // Запрет контекстного меню
+            document.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                return false;
+            });
+
+            // Запрет выделения
+            document.addEventListener('selectstart', function(e) {
+                e.preventDefault();
+                return false;
+            });
+
+            // Запрет перетаскивания
+            document.addEventListener('dragstart', function(e) {
+                e.preventDefault();
+                return false;
+            });
+
+            // Запрет копирования
+            document.addEventListener('copy', function(e) {
+                e.preventDefault();
+                return false;
+            });
+
+            // Запрет вырезания
+            document.addEventListener('cut', function(e) {
+                e.preventDefault();
+                return false;
+            });
+
+            // Запрет вставки
+            document.addEventListener('paste', function(e) {
+                e.preventDefault();
+                return false;
+            });
+
+            // Защита от Print Screen
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p')) {
+                    e.preventDefault();
+                    return false;
+                }
+                
+                // Блокировка DevTools
+                if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C'))) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+
+            // Защита от скриншотов через DevTools
+            Object.defineProperty(HTMLCanvasElement.prototype, 'toDataURL', {
+                value: function() {
+                    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+                }
+            });
+
+            Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
+                value: function(callback) {
+                    callback(new Blob());
+                }
+            });
+
+            // Защита от извлечения canvas данных
+            const originalGetContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function(type, attributes) {
+                const context = originalGetContext.call(this, type, attributes);
+                if (type === '2d') {
+                    const originalGetImageData = context.getImageData;
+                    context.getImageData = function() {
+                        return originalGetImageData.apply(this, arguments);
+                    };
+                }
+                return context;
+            };
+        }
+
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         
         let currentPdf = null;
@@ -137,6 +234,9 @@
         
         async function loadPdf(url) {
             try {
+                // Включаем защиту перед загрузкой PDF
+                enableProtection();
+                
                 const loadingTask = pdfjsLib.getDocument(url);
                 currentPdf = await loadingTask.promise;
                 
@@ -164,6 +264,10 @@
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
+                
+                // Добавляем защиту для canvas
+                canvas.style.pointerEvents = 'none';
+                canvas.oncontextmenu = function(e) { e.preventDefault(); return false; };
                 
                 const renderContext = {
                     canvasContext: context,
@@ -222,11 +326,13 @@
             `;
         }
         
+        // Навигация клавишами
         document.addEventListener('keydown', function(e) {
             if (e.key === 'ArrowRight' || e.key === 'PageDown') nextPage();
             if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevPage();
         });
         
+        // Навигация свайпами
         let touchStartX = 0;
         document.addEventListener('touchstart', function(e) {
             touchStartX = e.changedTouches[0].screenX;
@@ -241,6 +347,25 @@
                 else prevPage();
             }
         });
+
+        // Защита от изменения видимости страницы
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden && tg) {
+                tg.showAlert('Пожалуйста, не переключайтесь с этой страницы для защиты контента');
+            }
+        });
+
+        // Защита от изменения размеров (для браузера)
+        if (!tg) {
+            let initialWidth = window.innerWidth;
+            let initialHeight = window.innerHeight;
+            
+            setInterval(function() {
+                if (window.innerWidth !== initialWidth || window.innerHeight !== initialHeight) {
+                    document.body.innerHTML = '<div style="display: flex; justify-content: center; align-items: center; height: 100vh; color: red; font-size: 18px;">Обнаружена попытка обхода защиты</div>';
+                }
+            }, 1000);
+        }
     </script>
 </body>
 </html>
