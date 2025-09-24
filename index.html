@@ -75,19 +75,6 @@
             animation: spin 1s linear infinite;
         }
         
-        .page-counter {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(0,0,0,0.9);
-            color: white;
-            padding: 10px 15px;
-            border-radius: 10px;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 1000;
-        }
-        
         .error {
             display: flex;
             justify-content: center;
@@ -115,8 +102,6 @@
         <div class="spinner"></div>
         <div>Загрузка PDF...</div>
     </div>
-    
-    <div class="page-counter" id="pageCounter" style="display: none;">1/1</div>
 
     <script>
         // Инициализация Telegram Web App
@@ -206,10 +191,6 @@
                 currentPdf = await loadingTask.promise;
                 
                 pageCount = currentPdf.numPages;
-                
-                // Показываем счетчик страниц
-                document.getElementById('pageCounter').style.display = 'block';
-                updatePageCounter(1, pageCount);
                 
                 // Рендерим все страницы
                 await renderAllPages();
@@ -303,36 +284,6 @@
                 element.scrollIntoView({ behavior: 'smooth' });
             }
         }
-        
-        function updatePageCounter(current, total) {
-            document.getElementById('pageCounter').textContent = `${current}/${total}`;
-        }
-        
-        // Отслеживаем прокрутку для обновления счетчика
-        let scrollTimeout;
-        window.addEventListener('scroll', () => {
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(() => {
-                const pages = document.querySelectorAll('.page-wrapper');
-                let currentVisiblePage = 1;
-                
-                // Находим страницу, которая наиболее видима в viewport
-                let maxVisibility = 0;
-                
-                pages.forEach((page, index) => {
-                    const rect = page.getBoundingClientRect();
-                    const visibility = Math.min(rect.height, 
-                        Math.min(window.innerHeight, rect.bottom) - Math.max(0, rect.top));
-                    
-                    if (visibility > maxVisibility) {
-                        maxVisibility = visibility;
-                        currentVisiblePage = index + 1;
-                    }
-                });
-                
-                updatePageCounter(currentVisiblePage, pageCount);
-            }, 100);
-        });
         
         function showError(message) {
             const container = document.getElementById('pdfContainer');
