@@ -85,9 +85,11 @@
             padding: 12px 24px;
             border-radius: 20px;
             display: flex;
-            gap: 20px;
+            gap: 40px; /* Увеличил расстояние между элементами */
             align-items: center;
             font-size: 14px;
+            min-width: 280px; /* Минимальная ширина для сохранения расстояния */
+            justify-content: space-between; /* Равномерное распределение */
         }
         
         .controls button {
@@ -99,11 +101,20 @@
             font-weight: bold;
             min-width: 80px;
             color: white;
+            flex-shrink: 0; /* Запрещаем сжатие кнопок */
         }
         
         .controls button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
+        }
+        
+        #pageInfo {
+            font-size: 16px;
+            font-weight: bold;
+            min-width: 60px; /* Минимальная ширина для нумерации */
+            text-align: center;
+            flex-shrink: 0; /* Запрещаем сжатие нумерации */
         }
         
         .error {
@@ -131,7 +142,7 @@
     
     <div class="controls" id="controls" style="display: none;">
         <button id="prevBtn" onclick="prevPage()">Назад</button>
-        <span id="pageInfo"1/1</span>
+        <span id="pageInfo">1/1</span>
         <button id="nextBtn" onclick="nextPage()">Дальше</button>
     </div>
 
