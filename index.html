@@ -99,7 +99,7 @@
             max-width: 95%;
             word-wrap: break-word;
             font-weight: 500;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
         
         .loading {
@@ -299,9 +299,13 @@
             return `/api/proxy?url=${encodedUrl}`;
         }
         
-        // Простая нумерация разворотов
+        // Функция для создания подписи над разворотом
         function createCaption(spreadNum) {
-            return `Разворот ${spreadNum}`;
+            if (spreadNum === 1) {
+                return "Разворот 1 (Обложка)";
+            } else {
+                return `Разворот ${spreadNum}`;
+            }
         }
         
         // Автоматическое определение масштаба
@@ -389,13 +393,13 @@
                     const pageContainer = document.createElement('div');
                     pageContainer.className = 'page-container';
                     
-                    // Добавляем подпись ПЕРВОЙ (над изображением)
+                    // Добавляем подпись НАД изображением
                     const caption = document.createElement('div');
                     caption.className = 'page-caption';
                     caption.textContent = createCaption(spreadNum);
                     pageContainer.appendChild(caption);
                     
-                    // Добавляем canvas ПОСЛЕ подписи
+                    // Добавляем canvas
                     pageContainer.appendChild(canvas);
                     
                     pageContainers.push(pageContainer);
