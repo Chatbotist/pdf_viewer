@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background: #000;
+            font-family: Arial, sans-serif;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        #pdfContainer {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 0;
+            gap: 30px;
+        }
+        
+        .page-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 95%;
+            max-width: 1200px;
+        }
+        
+        .page-caption {
+            color: white;
+            font-size: 16px;
+            margin-bottom: 15px;
+            text-align: center;
+            padding: 8px 20px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 10px;
+            width: fit-content;
+        }
+        
+        canvas {
+            max-width: 100%;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            display: block;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-size: 16px;
+            flex-direction: column;
+            gap: 10px;
+            color: white;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .page-counter {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 1000;
+        }
+        
+        .error {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+            flex-direction: column;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Плавная прокрутка */
+        html {
+            scroll-behavior: smooth;
+        }
+    </style>
+</head>
+<body>
+    <div id="pdfContainer" class="loading">
+        <div class="spinner"></div>
+        <div>Загрузка PDF...</div>
+    </div>
+    
+    <div class="page-counter" id="pageCounter" style="display: none;">1/1</div>
+
+    <script>
+        // Инициализация Telegram Web App
+        let tg = null;
+        let isTelegram = false;
+        
+        if (window.Telegram && window.Telegram.WebApp) {
+            tg = window.Telegram.WebApp;
+            isTelegram = true;
+            tg.expand();
+            tg.enableClosingConfirmation();
+            tg.BackButton.show();
+            tg.BackButton.onClick(() => tg.close());
+            
+            document.body.style.backgroundColor = tg.themeParams.bg_color || '#000';
+        }
+
+        // Базовая защита
+        function enableBasicProtection() {
+            document.addEventListener('contextmenu', (e) => e.preventDefault());
+            document.addEventListener('selectstart', (e) => e.preventDefault());
+            document.addEventListener('dragstart', (e) => e.preventDefault());
+        }
+
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        let currentPdf = null;
+        let pageCount = 0;
+        let renderedPages = new Map();
+        
+        function createProxyUrl(pdfUrl) {
+            const encodedUrl = encodeURIComponent(pdfUrl);
+            return `/api/proxy?url=${encodedUrl}`;
+        }
+        
+        // Функция для создания подписи страницы
+        function createPageCaption(pageNum) {
+            const caption = document.createElement('div');
+            caption.className = 'page-caption';
+            
+            if (pageNum === 1) {
+                caption.textContent = "Разворот 1: страницы 1-2 (Обложки)";
+            } else {
+                const startPage = pageNum * 2 - 1;
+                const endPage = pageNum * 2;
+                caption.textContent = `Разворот ${pageNum}: страницы ${startPage}-${endPage}`;
+            }
+            
+            return caption;
+        }
+        
+        // Функция для получения параметра page из URL
+        function getPageParameter() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pageParam = urlParams.get('page');
+            
+            if (pageParam) {
+                const pageNum = parseInt(pageParam);
+                if (!isNaN(pageNum) && pageNum > 0) {
+                    return pageNum;
+                }
+            }
+            
+            return 1;
+        }
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        let pdfUrl = urlParams.get('pdf_url');
+        
+        if (!pdfUrl) {
+            showError('Ошибка: не указан pdf_url параметр');
+        } else {
+            try {
+                pdfUrl = decodeURIComponent(pdfUrl);
+            } catch (e) {}
+            
+            const startPage = getPageParameter();
+            const proxyUrl = createProxyUrl(pdfUrl);
+            loadPdf(proxyUrl, startPage);
+        }
+        
+        async function loadPdf(url, startPage = 1) {
+            try {
+                enableBasicProtection();
+                
+                const loadingTask = pdfjsLib.getDocument(url);
+                currentPdf = await loadingTask.promise;
+                
+                pageCount = currentPdf.numPages;
+                
+                // Показываем счетчик страниц
+                document.getElementById('pageCounter').style.display = 'block';
+                updatePageCounter(1, pageCount);
+                
+                // Рендерим все страницы
+                await renderAllPages();
+                
+                // Прокручиваем к нужной странице
+                if (startPage > 1) {
+                    setTimeout(() => {
+                        scrollToPage(Math.min(startPage, pageCount));
+                    }, 100);
+                }
+                
+            } catch (error) {
+                console.error('Ошибка загрузки PDF:', error);
+                showError('Ошибка загрузки PDF');
+            }
+        }
+        
+        async function renderAllPages() {
+            const container = document.getElementById('pdfContainer');
+            container.innerHTML = '';
+            container.className = '';
+            
+            // Создаем элементы для всех страниц
+            for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+                const pageWrapper = document.createElement('div');
+                pageWrapper.className = 'page-wrapper';
+                pageWrapper.id = `page-${pageNum}`;
+                
+                // Добавляем подпись
+                const caption = createPageCaption(pageNum);
+                pageWrapper.appendChild(caption);
+                
+                // Добавляем placeholder для canvas
+                const canvasPlaceholder = document.createElement('div');
+                canvasPlaceholder.className = 'loading';
+                canvasPlaceholder.innerHTML = '<div class="spinner"></div><div>Загрузка страницы...</div>';
+                pageWrapper.appendChild(canvasPlaceholder);
+                
+                container.appendChild(pageWrapper);
+            }
+            
+            // Рендерим страницы последовательно
+            for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+                await renderPage(pageNum);
+            }
+        }
+        
+        async function renderPage(pageNum) {
+            if (!currentPdf || pageNum < 1 || pageNum > pageCount) return;
+            
+            try {
+                const page = await currentPdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.8 });
+                
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                
+                await page.render(renderContext).promise;
+                
+                // Заменяем placeholder на canvas
+                const pageWrapper = document.getElementById(`page-${pageNum}`);
+                const placeholder = pageWrapper.querySelector('.loading');
+                
+                if (placeholder) {
+                    pageWrapper.removeChild(placeholder);
+                }
+                
+                pageWrapper.appendChild(canvas);
+                renderedPages.set(pageNum, canvas);
+                
+            } catch (error) {
+                console.error('Ошибка рендеринга страницы:', error);
+                const pageWrapper = document.getElementById(`page-${pageNum}`);
+                const placeholder = pageWrapper.querySelector('.loading');
+                if (placeholder) {
+                    placeholder.innerHTML = '<div>Ошибка загрузки страницы</div>';
+                }
+            }
+        }
+        
+        function scrollToPage(pageNum) {
+            const element = document.getElementById(`page-${pageNum}`);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+        
+        function updatePageCounter(current, total) {
+            document.getElementById('pageCounter').textContent = `${current}/${total}`;
+        }
+        
+        // Отслеживаем прокрутку для обновления счетчика
+        let scrollTimeout;
+        window.addEventListener('scroll', () => {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                const pages = document.querySelectorAll('.page-wrapper');
+                let currentVisiblePage = 1;
+                
+                // Находим страницу, которая наиболее видима в viewport
+                let maxVisibility = 0;
+                
+                pages.forEach((page, index) => {
+                    const rect = page.getBoundingClientRect();
+                    const visibility = Math.min(rect.height, 
+                        Math.min(window.innerHeight, rect.bottom) - Math.max(0, rect.top));
+                    
+                    if (visibility > maxVisibility) {
+                        maxVisibility = visibility;
+                        currentVisiblePage = index + 1;
+                    }
+                });
+                
+                updatePageCounter(currentVisiblePage, pageCount);
+            }, 100);
+        });
+        
+        function showError(message) {
+            const container = document.getElementById('pdfContainer');
+            container.className = 'error';
+            container.innerHTML = `
+                <h3>Ошибка</h3>
+                <p>${message}</p>
+                <button onclick="window.location.reload()" style="padding: 10px 20px; margin-top: 10px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">Обновить</button>
+            `;
+        }
+        
+        // Блокируем горизонтальную прокрутку
+        document.addEventListener('wheel', (e) => {
+            if (e.deltaX !== 0) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+    </script>
+</body>
+</html>
