@@ -87,9 +87,10 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             display: block;
             border-radius: 4px;
+            margin-bottom: 8px;
         }
         
-        .spread-caption {
+        .page-caption {
             color: #888;
             font-size: 13px;
             text-align: center;
@@ -98,18 +99,8 @@
             max-width: 95%;
             word-wrap: break-word;
             font-weight: 500;
-            margin-bottom: 8px;
-        }
-        
-        .page-caption {
-            color: #666;
-            font-size: 12px;
-            text-align: center;
-            padding: 8px 10px 0 10px;
-            line-height: 1.3;
-            max-width: 95%;
-            word-wrap: break-word;
-            font-style: italic;
+            order: -1; /* Перемещаем надпись НАД изображением */
+            margin-bottom: 10px;
         }
         
         .loading {
@@ -169,13 +160,9 @@
         
         /* Адаптация под разные экраны */
         @media (max-width: 320px) {
-            .spread-caption {
+            .page-caption {
                 font-size: 11px;
                 padding: 4px 8px;
-            }
-            
-            .page-caption {
-                font-size: 10px;
             }
             
             .header {
@@ -190,12 +177,8 @@
         }
         
         @media (max-width: 480px) {
-            .spread-caption {
-                font-size: 12px;
-            }
-            
             .page-caption {
-                font-size: 11px;
+                font-size: 12px;
             }
             
             .header {
@@ -221,12 +204,8 @@
         }
         
         @media (min-width: 768px) {
-            .spread-caption {
-                font-size: 14px;
-            }
-            
             .page-caption {
-                font-size: 13px;
+                font-size: 14px;
             }
             
             .header {
@@ -256,7 +235,7 @@
                 padding-right: max(10px, env(safe-area-inset-right));
             }
             
-            .spread-caption, .page-caption {
+            .page-caption {
                 padding-left: max(10px, env(safe-area-inset-left));
                 padding-right: max(10px, env(safe-area-inset-right));
             }
@@ -314,26 +293,31 @@
         
         let currentPdf = null;
         let totalPages = 0;
+        let loadedPages = 0;
         
         function createProxyUrl(pdfUrl) {
             const encodedUrl = encodeURIComponent(pdfUrl);
             return `/api/proxy?url=${encodedUrl}`;
         }
         
-        // Функция для определения разворота страницы
-        function getSpreadInfo(pageNum, totalPages) {
+        // Функция для создания подписи под каждой страницей
+        function createCaption(pageNum, totalPages) {
+            // Определяем номер разворота
             const spreadNum = Math.ceil(pageNum / 2);
-            const startPage = (spreadNum - 1) * 2 + 1;
-            const endPage = Math.min(startPage + 1, totalPages);
             
-            let spreadCaption = `Разворот ${spreadNum}: Страницы ${startPage}-${endPage}`;
-            if (spreadNum === 1) {
-                spreadCaption += " (Обложка)";
+            if (pageNum === 1) {
+                return `Разворот ${spreadNum}: Страницы 1-2 (Обложка)`;
+            } else if (pageNum % 2 === 0) {
+                // Четные страницы (правая)
+                const startPage = pageNum - 1;
+                const endPage = pageNum;
+                return `Разворот ${spreadNum}: Страницы ${startPage}-${endPage}`;
+            } else {
+                // Нечетные страницы (левая, кроме первой)
+                const startPage = pageNum;
+                const endPage = Math.min(pageNum + 1, totalPages);
+                return `Разворот ${spreadNum}: Страницы ${startPage}-${endPage}`;
             }
-            
-            const pageCaption = `Страница ${pageNum}`;
-            
-            return { spreadCaption, pageCaption };
         }
         
         // Автоматическое определение масштаба
@@ -388,13 +372,13 @@
             container.appendChild(pagesWrapper);
             
             const scale = getScaleForMobile();
-            const totalSpreads = Math.ceil(totalPages / 2);
             
             // Сначала рендерим все страницы, потом добавляем в DOM
             const pageContainers = [];
             
             for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
                 try {
+                    // Рендерим каждую страницу отдельно
                     const page = await currentPdf.getPage(pageNum);
                     const viewport = page.getViewport({ scale: scale });
                     
@@ -416,29 +400,18 @@
                     const pageContainer = document.createElement('div');
                     pageContainer.className = 'page-container';
                     
-                    // Получаем информацию о развороте
-                    const { spreadCaption, pageCaption } = getSpreadInfo(pageNum, totalPages);
+                    // Добавляем подпись ПЕРВОЙ (над изображением)
+                    const caption = document.createElement('div');
+                    caption.className = 'page-caption';
+                    caption.textContent = createCaption(pageNum, totalPages);
+                    pageContainer.appendChild(caption);
                     
-                    // Добавляем подпись разворота (только для первой страницы разворота)
-                    if (pageNum % 2 === 1 || pageNum === 1) {
-                        const spreadCaptionEl = document.createElement('div');
-                        spreadCaptionEl.className = 'spread-caption';
-                        spreadCaptionEl.textContent = spreadCaption;
-                        pageContainer.appendChild(spreadCaptionEl);
-                    }
-                    
-                    // Добавляем canvas
+                    // Добавляем canvas ПОСЛЕ подписи
                     pageContainer.appendChild(canvas);
-                    
-                    // Добавляем подпись страницы
-                    const pageCaptionEl = document.createElement('div');
-                    pageCaptionEl.className = 'page-caption';
-                    pageCaptionEl.textContent = pageCaption;
-                    pageContainer.appendChild(pageCaptionEl);
                     
                     pageContainers.push(pageContainer);
                     
-                    // Обновляем прогресс
+                    loadedPages++;
                     updateProgress(Math.round((pageNum / totalPages) * 100));
                     
                     // Небольшая пауза для плавности
@@ -460,6 +433,7 @@
             // Добавляем информацию о документе
             const info = document.createElement('div');
             info.className = 'page-info';
+            const totalSpreads = Math.ceil(totalPages / 2);
             info.textContent = `Документ загружен • ${totalPages} страниц • ${totalSpreads} разворотов`;
             pagesWrapper.appendChild(info);
             
