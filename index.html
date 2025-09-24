@@ -85,11 +85,11 @@
             padding: 12px 24px;
             border-radius: 20px;
             display: flex;
-            gap: 40px; /* Увеличил расстояние между элементами */
+            gap: 40px;
             align-items: center;
             font-size: 14px;
-            min-width: 280px; /* Минимальная ширина для сохранения расстояния */
-            justify-content: space-between; /* Равномерное распределение */
+            min-width: 280px;
+            justify-content: space-between;
         }
         
         .controls button {
@@ -101,7 +101,7 @@
             font-weight: bold;
             min-width: 80px;
             color: white;
-            flex-shrink: 0; /* Запрещаем сжатие кнопок */
+            flex-shrink: 0;
         }
         
         .controls button:disabled {
@@ -112,9 +112,9 @@
         #pageInfo {
             font-size: 16px;
             font-weight: bold;
-            min-width: 60px; /* Минимальная ширина для нумерации */
+            min-width: 60px;
             text-align: center;
-            flex-shrink: 0; /* Запрещаем сжатие нумерации */
+            flex-shrink: 0;
         }
         
         .error {
@@ -197,6 +197,22 @@
             return caption;
         }
         
+        // Функция для получения параметра page из URL
+        function getPageParameter() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pageParam = urlParams.get('page');
+            
+            if (pageParam) {
+                const pageNum = parseInt(pageParam);
+                // Проверяем, что это валидное число и оно больше 0
+                if (!isNaN(pageNum) && pageNum > 0) {
+                    return pageNum;
+                }
+            }
+            
+            return 1; // По умолчанию первая страница
+        }
+        
         const urlParams = new URLSearchParams(window.location.search);
         let pdfUrl = urlParams.get('pdf_url');
         
@@ -207,11 +223,15 @@
                 pdfUrl = decodeURIComponent(pdfUrl);
             } catch (e) {}
             
+            // Получаем номер страницы из параметра
+            const startPage = getPageParameter();
+            currentPage = startPage;
+            
             const proxyUrl = createProxyUrl(pdfUrl);
-            loadPdf(proxyUrl);
+            loadPdf(proxyUrl, startPage);
         }
         
-        async function loadPdf(url) {
+        async function loadPdf(url, startPage = 1) {
             try {
                 enableBasicProtection();
                 
@@ -219,7 +239,15 @@
                 currentPdf = await loadingTask.promise;
                 
                 pageCount = currentPdf.numPages;
-                await renderPage(1);
+                
+                // Проверяем, что запрошенная страница существует
+                if (startPage < 1) {
+                    startPage = 1;
+                } else if (startPage > pageCount) {
+                    startPage = pageCount;
+                }
+                
+                await renderPage(startPage);
                 showControls();
                 
             } catch (error) {
