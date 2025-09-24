@@ -131,7 +131,7 @@
     
     <div class="controls" id="controls" style="display: none;">
         <button id="prevBtn" onclick="prevPage()">Назад</button>
-        <span id="pageInfo">Разворот 1 из 1</span>
+        <span id="pageInfo">1 из 1</span>
         <button id="nextBtn" onclick="nextPage()">Дальше</button>
     </div>
 
@@ -268,7 +268,7 @@
         }
         
         function updatePageInfo() {
-            document.getElementById('pageInfo').textContent = `Разворот ${currentPage} из ${pageCount}`;
+            document.getElementById('pageInfo').textContent = `${currentPage} из ${pageCount}`;
         }
         
         function updateButtons() {
