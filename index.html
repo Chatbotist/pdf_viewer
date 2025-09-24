@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        #pdfContainer {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 10px 0;
+        }
+        
+        .page-container {
+            display: flex;
+            justify-content: center;
+            margin: 0 auto 20px auto;
+            max-width: 95%;
+        }
+        
+        .page-container canvas {
+            max-width: 100%;
+            height: auto;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: block;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            font-size: 16px;
+            flex-direction: column;
+            gap: 10px;
+            color: white;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .progress {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 15px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        .error {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+            flex-direction: column;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="progress" id="progress" style="display: none;">
+        Загрузка: 0%
+    </div>
+    
+    <div id="pdfContainer" class="loading">
+        <div class="spinner"></div>
+        <div>Загрузка PDF...</div>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        let tg = null;
+        let isTelegram = false;
+        
+        if (window.Telegram && window.Telegram.WebApp) {
+            tg = window.Telegram.WebApp;
+            isTelegram = true;
+            tg.expand();
+            tg.enableClosingConfirmation();
+            tg.BackButton.show();
+            tg.BackButton.onClick(() => tg.close());
+            document.body.style.backgroundColor = tg.themeParams.bg_color || '#000';
+        }
+
+        // Базовая защита
+        function enableBasicProtection() {
+            document.addEventListener('contextmenu', (e) => e.preventDefault());
+            document.addEventListener('selectstart', (e) => e.preventDefault());
+            document.addEventListener('dragstart', (e) => e.preventDefault());
+        }
+
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        let currentPdf = null;
+        let totalPages = 0;
+        let loadedPages = 0;
+        
+        function createProxyUrl(pdfUrl) {
+            const encodedUrl = encodeURIComponent(pdfUrl);
+            return `/api/proxy?url=${encodedUrl}`;
+        }
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        let pdfUrl = urlParams.get('pdf_url');
+        
+        if (!pdfUrl) {
+            showError('Ошибка: не указан pdf_url параметр');
+        } else {
+            try {
+                pdfUrl = decodeURIComponent(pdfUrl);
+            } catch (e) {}
+            
+            const proxyUrl = createProxyUrl(pdfUrl);
+            loadPdf(proxyUrl);
+        }
+        
+        async function loadPdf(url) {
+            try {
+                enableBasicProtection();
+                
+                const loadingTask = pdfjsLib.getDocument(url);
+                currentPdf = await loadingTask.promise;
+                
+                totalPages = currentPdf.numPages;
+                document.getElementById('progress').style.display = 'block';
+                updateProgress(0);
+                
+                // Загружаем все страницы последовательно
+                await renderAllPages();
+                
+            } catch (error) {
+                console.error('Ошибка загрузки PDF:', error);
+                showError('Ошибка загрузки PDF');
+            }
+        }
+        
+        async function renderAllPages() {
+            const container = document.getElementById('pdfContainer');
+            container.innerHTML = '';
+            container.style.overflowY = 'auto';
+            
+            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                try {
+                    const page = await currentPdf.getPage(pageNum);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    
+                    const pageContainer = document.createElement('div');
+                    pageContainer.className = 'page-container';
+                    
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    const renderContext = {
+                        canvasContext: ctx,
+                        viewport: viewport
+                    };
+                    
+                    await page.render(renderContext).promise;
+                    
+                    pageContainer.appendChild(canvas);
+                    container.appendChild(pageContainer);
+                    
+                    loadedPages++;
+                    updateProgress(Math.round((loadedPages / totalPages) * 100));
+                    
+                } catch (error) {
+                    console.error(`Ошибка рендеринга страницы ${pageNum}:`, error);
+                }
+            }
+            
+            // Загрузка завершена
+            document.getElementById('progress').style.display = 'none';
+            
+            // Показываем информацию о количестве страниц
+            const info = document.createElement('div');
+            info.style.textAlign = 'center';
+            info.style.color = '#888';
+            info.style.marginTop = '10px';
+            info.style.padding = '10px';
+            info.textContent = `Загружено ${totalPages} страниц`;
+            container.appendChild(info);
+        }
+        
+        function updateProgress(percent) {
+            document.getElementById('progress').textContent = `Загрузка: ${percent}%`;
+        }
+        
+        function showError(message) {
+            const container = document.getElementById('pdfContainer');
+            container.className = 'error';
+            container.innerHTML = `
+                <h3>Ошибка</h3>
+                <p>${message}</p>
+                <button onclick="window.location.reload()" style="padding: 10px 20px; margin-top: 10px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">Обновить</button>
+            `;
+        }
+    </script>
+</body>
+</html>
