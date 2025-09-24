@@ -81,24 +81,25 @@
             margin-top: 10px;
         }
         
+        .page-caption {
+            color: #888;
+            font-size: 13px;
+            text-align: center;
+            padding: 8px 10px 12px 10px;
+            line-height: 1.3;
+            max-width: 95%;
+            word-wrap: break-word;
+            font-weight: 500;
+            order: 1; /* Над изображением */
+        }
+        
         .page-container canvas {
             max-width: 100%;
             height: auto;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             display: block;
             border-radius: 4px;
-            margin-bottom: 8px;
-        }
-        
-        .page-caption {
-            color: #888;
-            font-size: 13px;
-            text-align: center;
-            padding: 5px 10px;
-            line-height: 1.3;
-            max-width: 95%;
-            word-wrap: break-word;
-            font-weight: 500;
+            order: 2; /* Под надписью */
         }
         
         .loading {
@@ -160,7 +161,7 @@
         @media (max-width: 320px) {
             .page-caption {
                 font-size: 11px;
-                padding: 4px 8px;
+                padding: 6px 8px 10px 8px;
             }
             
             .header {
@@ -177,6 +178,7 @@
         @media (max-width: 480px) {
             .page-caption {
                 font-size: 12px;
+                padding: 7px 10px 11px 10px;
             }
             
             .header {
@@ -204,6 +206,7 @@
         @media (min-width: 768px) {
             .page-caption {
                 font-size: 14px;
+                padding: 10px 15px 14px 15px;
             }
             
             .header {
@@ -298,14 +301,14 @@
             return `/api/proxy?url=${encodedUrl}`;
         }
         
-        // Функция для создания подписи под разворотом
-        function createCaption(pageNum, totalPages) {
-            if (pageNum === 1) {
+        // Функция для создания подписи над разворотом
+        function createCaption(spreadNum, totalPages) {
+            if (spreadNum === 1) {
                 return "Разворот 1: Страницы 1-2 (обложка)";
             } else {
-                const startPage = (pageNum - 1) * 2 + 1;
-                const endPage = Math.min(startPage + 1, totalPages);
-                return `Разворот ${pageNum}: Страницы ${startPage}-${endPage}`;
+                const startPage = (spreadNum - 1) * 2 + 1;
+                const endPage = startPage + 1;
+                return `Разворот ${spreadNum}: Страницы ${startPage}-${endPage}`;
             }
         }
         
@@ -368,12 +371,10 @@
             
             for (let spreadNum = 1; spreadNum <= totalSpreads; spreadNum++) {
                 try {
-                    // Для каждого разворота рендерим две страницы
-                    const startPage = (spreadNum - 1) * 2 + 1;
-                    const endPage = Math.min(startPage + 1, totalPages);
+                    // Для каждого разворота рендерим первую страницу
+                    const pageNumber = (spreadNum - 1) * 2 + 1;
                     
-                    // Рендерим первую страницу разворота
-                    const page = await currentPdf.getPage(startPage);
+                    const page = await currentPdf.getPage(pageNumber);
                     const viewport = page.getViewport({ scale: scale });
                     
                     const canvas = document.createElement('canvas');
@@ -394,14 +395,14 @@
                     const pageContainer = document.createElement('div');
                     pageContainer.className = 'page-container';
                     
-                    // Добавляем canvas
-                    pageContainer.appendChild(canvas);
-                    
-                    // Добавляем подпись
+                    // Добавляем подпись (ПЕРВОЙ - над изображением)
                     const caption = document.createElement('div');
                     caption.className = 'page-caption';
                     caption.textContent = createCaption(spreadNum, totalPages);
                     pageContainer.appendChild(caption);
+                    
+                    // Добавляем canvas (ВТОРЫМ - под надписью)
+                    pageContainer.appendChild(canvas);
                     
                     pageContainers.push(pageContainer);
                     
