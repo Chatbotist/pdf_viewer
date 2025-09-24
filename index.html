@@ -24,7 +24,31 @@
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
+        }
+        
+        .header {
             position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 50px;
+            background: rgba(0,0,0,0.95);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 500;
+            z-index: 1000;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding-top: env(safe-area-inset-top);
+            box-sizing: content-box;
+        }
+        
+        .header-content {
+            padding: 0 20px;
+            text-align: center;
         }
         
         #pdfContainer {
@@ -32,8 +56,9 @@
             height: 100%;
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 10px 0;
+            padding: 60px 0 20px 0;
             -webkit-overflow-scrolling: touch;
+            box-sizing: border-box;
         }
         
         .page-container {
@@ -43,6 +68,10 @@
             padding: 0 10px;
             max-width: 100%;
             box-sizing: border-box;
+        }
+        
+        .page-container:first-child {
+            margin-top: 10px;
         }
         
         .page-container canvas {
@@ -65,6 +94,7 @@
             padding: 0 20px;
             text-align: center;
             box-sizing: border-box;
+            padding-top: 60px;
         }
         
         .spinner {
@@ -78,7 +108,7 @@
         
         .progress {
             position: fixed;
-            top: env(safe-area-inset-top, 10px);
+            top: calc(60px + env(safe-area-inset-top, 0px));
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0,0,0,0.9);
@@ -102,6 +132,7 @@
             padding: 20px;
             flex-direction: column;
             box-sizing: border-box;
+            padding-top: 60px;
         }
         
         .page-info {
@@ -114,15 +145,36 @@
         
         /* Адаптация под разные экраны */
         @media (max-width: 480px) {
+            .header {
+                height: 45px;
+                font-size: 15px;
+            }
+            
+            .header-content {
+                padding: 0 15px;
+            }
+            
+            #pdfContainer {
+                padding: 55px 0 15px 0;
+            }
+            
+            .loading {
+                padding-top: 55px;
+            }
+            
+            .error {
+                padding-top: 55px;
+            }
+            
             .page-container {
                 padding: 0 8px;
                 margin-bottom: 12px;
             }
             
             .progress {
+                top: calc(55px + env(safe-area-inset-top, 0px));
                 font-size: 13px;
                 padding: 8px 16px;
-                top: max(10px, env(safe-area-inset-top, 10px));
             }
             
             .loading {
@@ -132,6 +184,23 @@
         }
         
         @media (min-width: 768px) {
+            .header {
+                height: 55px;
+                font-size: 17px;
+            }
+            
+            #pdfContainer {
+                padding: 65px 0 25px 0;
+            }
+            
+            .loading {
+                padding-top: 65px;
+            }
+            
+            .error {
+                padding-top: 65px;
+            }
+            
             .page-container {
                 padding: 0 15px;
                 margin-bottom: 20px;
@@ -144,14 +213,19 @@
         
         /* Поддержка iPhone X+ с выемкой */
         @supports(padding: max(0px)) {
+            .header {
+                padding-left: max(0px, env(safe-area-inset-left));
+                padding-right: max(0px, env(safe-area-inset-right));
+            }
+            
             .page-container {
                 padding-left: max(10px, env(safe-area-inset-left));
                 padding-right: max(10px, env(safe-area-inset-right));
             }
             
             #pdfContainer {
-                padding-top: max(10px, env(safe-area-inset-top));
-                padding-bottom: max(10px, env(safe-area-inset-bottom));
+                padding-left: max(0px, env(safe-area-inset-left));
+                padding-right: max(0px, env(safe-area-inset-right));
             }
         }
         
@@ -164,9 +238,18 @@
         #pdfContainer::-webkit-scrollbar {
             display: none;
         }
+        
+        /* Запрет скролла за header */
+        #pdfContainer {
+            margin-top: 0;
+        }
     </style>
 </head>
 <body>
+    <div class="header">
+        <div class="header-content">t.me/Paparazzy_bot</div>
+    </div>
+    
     <div class="progress" id="progress" style="display: none;">
         Загрузка: 0%
     </div>
@@ -212,10 +295,10 @@
         // Автоматическое определение масштаба для мобильных
         function getScaleForMobile() {
             const screenWidth = window.innerWidth;
-            if (screenWidth <= 320) return 1.0;  // Очень маленькие экраны
-            if (screenWidth <= 414) return 1.2;  // iPhone 6/7/8 - 11
-            if (screenWidth <= 768) return 1.4;  // Планшеты
-            return 1.6;  // Десктоп
+            if (screenWidth <= 320) return 1.0;
+            if (screenWidth <= 414) return 1.2;
+            if (screenWidth <= 768) return 1.4;
+            return 1.6;
         }
         
         const urlParams = new URLSearchParams(window.location.search);
@@ -271,7 +354,6 @@
                     canvas.height = viewport.height;
                     canvas.width = viewport.width;
                     
-                    // Оптимизация для мобильных
                     canvas.style.width = '100%';
                     canvas.style.height = 'auto';
                     
@@ -288,7 +370,6 @@
                     loadedPages++;
                     updateProgress(Math.round((loadedPages / totalPages) * 100));
                     
-                    // Небольшая пауза для плавной загрузки
                     if (pageNum % 3 === 0) {
                         await new Promise(resolve => setTimeout(resolve, 50));
                     }
@@ -298,16 +379,14 @@
                 }
             }
             
-            // Загрузка завершена
             document.getElementById('progress').style.display = 'none';
             
-            // Информация о документе
             const info = document.createElement('div');
             info.className = 'page-info';
             info.textContent = `Документ загружен • ${totalPages} страниц`;
             container.appendChild(info);
             
-            // Плавная прокрутка к началу
+            // Прокрутка к началу контента (под header)
             setTimeout(() => {
                 container.scrollTo({ top: 0, behavior: 'smooth' });
             }, 100);
@@ -329,7 +408,6 @@
         
         // Оптимизация для мобильных
         window.addEventListener('orientationchange', function() {
-            // Перезагрузка при смене ориентации для правильного масштабирования
             setTimeout(() => {
                 window.location.reload();
             }, 100);
@@ -346,6 +424,14 @@
         
         document.addEventListener('gestureend', function(e) {
             e.preventDefault();
+        });
+        
+        // Запрет скролла за header
+        const pdfContainer = document.getElementById('pdfContainer');
+        pdfContainer.addEventListener('scroll', function() {
+            if (this.scrollTop < 0) {
+                this.scrollTop = 0;
+            }
         });
     </script>
 </body>
