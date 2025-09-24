@@ -99,7 +99,6 @@
             max-width: 95%;
             word-wrap: break-word;
             font-weight: 500;
-            order: -1; /* Перемещаем надпись НАД изображением */
             margin-bottom: 10px;
         }
         
@@ -300,24 +299,9 @@
             return `/api/proxy?url=${encodedUrl}`;
         }
         
-        // Функция для создания подписи под каждой страницей
-        function createCaption(pageNum, totalPages) {
-            // Определяем номер разворота
-            const spreadNum = Math.ceil(pageNum / 2);
-            
-            if (pageNum === 1) {
-                return `Разворот ${spreadNum}: Страницы 1-2 (Обложка)`;
-            } else if (pageNum % 2 === 0) {
-                // Четные страницы (правая)
-                const startPage = pageNum - 1;
-                const endPage = pageNum;
-                return `Разворот ${spreadNum}: Страницы ${startPage}-${endPage}`;
-            } else {
-                // Нечетные страницы (левая, кроме первой)
-                const startPage = pageNum;
-                const endPage = Math.min(pageNum + 1, totalPages);
-                return `Разворот ${spreadNum}: Страницы ${startPage}-${endPage}`;
-            }
+        // Простая нумерация разворотов
+        function createCaption(spreadNum) {
+            return `Разворот ${spreadNum}`;
         }
         
         // Автоматическое определение масштаба
@@ -372,14 +356,19 @@
             container.appendChild(pagesWrapper);
             
             const scale = getScaleForMobile();
+            const totalSpreads = Math.ceil(totalPages / 2);
             
             // Сначала рендерим все страницы, потом добавляем в DOM
             const pageContainers = [];
             
-            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+            for (let spreadNum = 1; spreadNum <= totalSpreads; spreadNum++) {
                 try {
-                    // Рендерим каждую страницу отдельно
-                    const page = await currentPdf.getPage(pageNum);
+                    // Для каждого разворота рендерим две страницы
+                    const startPage = (spreadNum - 1) * 2 + 1;
+                    const endPage = Math.min(startPage + 1, totalPages);
+                    
+                    // Рендерим первую страницу разворота
+                    const page = await currentPdf.getPage(startPage);
                     const viewport = page.getViewport({ scale: scale });
                     
                     const canvas = document.createElement('canvas');
@@ -396,14 +385,14 @@
                     
                     await page.render(renderContext).promise;
                     
-                    // Создаем контейнер для страницы
+                    // Создаем контейнер для разворота
                     const pageContainer = document.createElement('div');
                     pageContainer.className = 'page-container';
                     
                     // Добавляем подпись ПЕРВОЙ (над изображением)
                     const caption = document.createElement('div');
                     caption.className = 'page-caption';
-                    caption.textContent = createCaption(pageNum, totalPages);
+                    caption.textContent = createCaption(spreadNum);
                     pageContainer.appendChild(caption);
                     
                     // Добавляем canvas ПОСЛЕ подписи
@@ -412,17 +401,17 @@
                     pageContainers.push(pageContainer);
                     
                     loadedPages++;
-                    updateProgress(Math.round((pageNum / totalPages) * 100));
+                    updateProgress(Math.round((spreadNum / totalSpreads) * 100));
                     
                     // Небольшая пауза для плавности
                     await new Promise(resolve => setTimeout(resolve, 30));
                     
                 } catch (error) {
-                    console.error(`Ошибка рендеринга страницы ${pageNum}:`, error);
+                    console.error(`Ошибка рендеринга разворота ${spreadNum}:`, error);
                 }
             }
             
-            // Добавляем все страницы в DOM за один раз
+            // Добавляем все развороты в DOM за один раз
             pageContainers.forEach((container, index) => {
                 if (index === 0) {
                     container.style.marginTop = '10px';
@@ -433,7 +422,6 @@
             // Добавляем информацию о документе
             const info = document.createElement('div');
             info.className = 'page-info';
-            const totalSpreads = Math.ceil(totalPages / 2);
             info.textContent = `Документ загружен • ${totalPages} страниц • ${totalSpreads} разворотов`;
             pagesWrapper.appendChild(info);
             
