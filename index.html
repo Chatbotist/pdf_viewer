@@ -210,27 +210,45 @@
             return await response.json();
         }
         
-        // Функция для генерации превью
+        // Функция для генерации превью с повторными попытками
         async function generatePreview(generatePreviewConfig) {
             const { album_id, host_url } = generatePreviewConfig;
             const apiUrl = `${host_url}/api/v1/album/${album_id}/generate-preview`;
+            const pdfUrl = `${host_url}/downloads/album_${album_id}.pdf`;
             
             updateStatus('Генерация превью...');
             
             try {
+                // Пытаемся сгенерировать превью
                 const result = await makeApiRequest(apiUrl, 'POST');
                 console.log('Preview generation result:', result);
                 
-                updateStatus('Превью сгенерировано');
+                // Даем время на генерацию файла
+                updateStatus('Превью сгенерировано, ожидание файла...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
                 
-                // Возвращаем URL для скачивания PDF
-                return `${host_url}/downloads/album_${album_id}.pdf`;
+                return pdfUrl;
                 
             } catch (error) {
                 console.error('Preview generation failed:', error);
-                // Если генерация не удалась, все равно пробуем загрузить PDF
-                // возможно он уже был сгенерирован ранее
-                return `${host_url}/downloads/album_${album_id}.pdf`;
+                
+                // Если ошибка, пробуем проверить доступность PDF
+                updateStatus('Проверка доступности PDF...');
+                try {
+                    // Пробуем загрузить PDF чтобы проверить его доступность
+                    await loadPdfThroughProxy(pdfUrl);
+                    return pdfUrl;
+                } catch (pdfError) {
+                    // Если PDF тоже недоступен, пробуем еще раз сгенерировать
+                    updateStatus('Повторная генерация превью...');
+                    try {
+                        const retryResult = await makeApiRequest(apiUrl, 'POST');
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        return pdfUrl;
+                    } catch (retryError) {
+                        throw new Error('Не удалось сгенерировать превью после нескольких попыток');
+                    }
+                }
             }
         }
         
@@ -302,31 +320,32 @@
             const startPage = getPageParameter();
             currentPage = startPage;
             
-            // Если указан generatePreview, генерируем превью
-            if (generatePreviewConfig) {
-                if (!generatePreviewConfig.album_id || !generatePreviewConfig.host_url) {
-                    showError('Отсутствуют обязательные параметры album_id или host_url');
-                    return;
+            try {
+                // Если указан generatePreview, сначала генерируем превью
+                if (generatePreviewConfig) {
+                    if (!generatePreviewConfig.album_id || !generatePreviewConfig.host_url) {
+                        showError('Отсутствуют обязательные параметры album_id или host_url');
+                        return;
+                    }
+                    
+                    // Последовательно: генерация -> получение URL -> загрузка PDF
+                    pdfUrl = await generatePreview(generatePreviewConfig);
+                } else {
+                    // Декодируем обычный pdf_url
+                    try {
+                        pdfUrl = decodeURIComponent(pdfUrl);
+                    } catch (e) {
+                        // Если декодирование не удалось, используем оригинальный URL
+                    }
                 }
                 
-                try {
-                    pdfUrl = await generatePreview(generatePreviewConfig);
-                } catch (error) {
-                    console.error('Preview generation error:', error);
-                    // Продолжаем с URL который должен быть
-                    pdfUrl = `${generatePreviewConfig.host_url}/downloads/album_${generatePreviewConfig.album_id}.pdf`;
-                }
-            } else {
-                // Декодируем обычный pdf_url
-                try {
-                    pdfUrl = decodeURIComponent(pdfUrl);
-                } catch (e) {
-                    // Если декодирование не удалось, используем оригинальный URL
-                }
+                // После получения URL загружаем PDF
+                await loadPdf(pdfUrl);
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showError(`Ошибка инициализации: ${error.message}`);
             }
-            
-            // Загружаем PDF
-            await loadPdf(pdfUrl);
         }
         
         async function loadPdf(url) {
@@ -429,7 +448,7 @@
             container.innerHTML = `
                 <h3>Ошибка</h3>
                 <p>${message}</p>
-                <button onclick="window.location.reload()" style="padding: 10px 20px; margin-top: 10px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">Обновить</button>
+                <button onclick="initialize()" style="padding: 10px 20px; margin-top: 10px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">Повторить</button>
             `;
         }
         
