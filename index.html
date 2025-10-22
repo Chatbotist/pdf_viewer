@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        /* Стили остаются без изменений */
         body, html {
             margin: 0;
             padding: 0;
@@ -143,7 +144,7 @@
 <body>
     <div id="pdfContainer" class="loading">
         <div class="spinner"></div>
-        <div>Инициализация...</div>
+        <div id="statusText">Инициализация...</div>
     </div>
     
     <div class="controls" id="controls" style="display: none;">
@@ -165,11 +166,10 @@
             tg.BackButton.show();
             tg.BackButton.onClick(() => tg.close());
             
-            // Используем встроенную защиту Telegram
             document.body.style.backgroundColor = tg.themeParams.bg_color || '#000';
         }
 
-        // Базовая защита (для браузера)
+        // Базовая защита
         function enableBasicProtection() {
             document.addEventListener('contextmenu', (e) => e.preventDefault());
             document.addEventListener('selectstart', (e) => e.preventDefault());
@@ -182,73 +182,64 @@
         let currentPage = 1;
         let pageCount = 0;
         
-        // Функция для создания прокси URL с обходом CORS
-        function createProxyUrl(pdfUrl) {
-            const encodedUrl = encodeURIComponent(pdfUrl);
-            return `/api/proxy?url=${encodedUrl}`;
+        // Функция для обновления статуса
+        function updateStatus(message) {
+            document.getElementById('statusText').textContent = message;
         }
         
-        // Функция для выполнения API запроса через прокси
-        async function makeApiRequest(url, method = 'GET', body = null) {
-            try {
-                const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-                
-                const options = {
-                    method: method,
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                };
-                
-                if (body && (method === 'POST' || method === 'PUT')) {
-                    options.body = JSON.stringify(body);
+        // Упрощенная функция для API запросов
+        async function makeApiRequest(url, method = 'GET') {
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+            
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
                 }
-                
-                const response = await fetch(proxyUrl, options);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                return await response.json();
-            } catch (error) {
-                console.error('API request error:', error);
-                throw error;
+            };
+            
+            if (method === 'POST') {
+                options.body = JSON.stringify({});
             }
+            
+            const response = await fetch(proxyUrl, options);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            return await response.json();
         }
         
         // Функция для генерации превью
         async function generatePreview(generatePreviewConfig) {
+            const { album_id, host_url } = generatePreviewConfig;
+            const apiUrl = `${host_url}/api/v1/album/${album_id}/generate-preview`;
+            
+            updateStatus('Генерация превью...');
+            
             try {
-                updateStatus('Генерация превью...');
+                const result = await makeApiRequest(apiUrl, 'POST');
+                console.log('Preview generation result:', result);
                 
-                const { album_id, host_url } = generatePreviewConfig;
-                const apiUrl = `${host_url}/api/v1/album/${album_id}/generate-preview`;
-                
-                await makeApiRequest(apiUrl, 'POST');
-                
-                updateStatus('Превью сгенерировано, загрузка PDF...');
+                updateStatus('Превью сгенерировано');
                 
                 // Возвращаем URL для скачивания PDF
                 return `${host_url}/downloads/album_${album_id}.pdf`;
                 
             } catch (error) {
-                console.error('Preview generation error:', error);
-                throw new Error('Не удалось сгенерировать превью');
+                console.error('Preview generation failed:', error);
+                // Если генерация не удалась, все равно пробуем загрузить PDF
+                // возможно он уже был сгенерирован ранее
+                return `${host_url}/downloads/album_${album_id}.pdf`;
             }
         }
         
-        // Функция для обновления статуса загрузки
-        function updateStatus(message) {
-            const container = document.getElementById('pdfContainer');
-            if (container.querySelector('.status-message')) {
-                container.querySelector('.status-message').textContent = message;
-            } else {
-                const statusElement = document.createElement('div');
-                statusElement.className = 'status-message';
-                statusElement.textContent = message;
-                container.appendChild(statusElement);
-            }
+        // Функция для загрузки PDF через прокси
+        async function loadPdfThroughProxy(pdfUrl) {
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(pdfUrl)}`;
+            const loadingTask = pdfjsLib.getDocument(proxyUrl);
+            return await loadingTask.promise;
         }
         
         // Функция для создания подписи страницы
@@ -274,13 +265,12 @@
             
             if (pageParam) {
                 const pageNum = parseInt(pageParam);
-                // Проверяем, что это валидное число и оно больше 0
                 if (!isNaN(pageNum) && pageNum > 0) {
                     return pageNum;
                 }
             }
             
-            return 1; // По умолчанию первая страница
+            return 1;
         }
         
         // Основная функция инициализации
@@ -307,18 +297,21 @@
                 return;
             }
             
-            // Если указан generatePreview, генерируем превью и получаем URL PDF
+            enableBasicProtection();
+            
+            // Если указан generatePreview, генерируем превью
             if (generatePreviewConfig) {
-                try {
-                    if (!generatePreviewConfig.album_id || !generatePreviewConfig.host_url) {
-                        throw new Error('Отсутствуют обязательные параметры album_id или host_url');
-                    }
-                    
-                    pdfUrl = await generatePreview(generatePreviewConfig);
-                    
-                } catch (error) {
-                    showError(`Ошибка генерации превью: ${error.message}`);
+                if (!generatePreviewConfig.album_id || !generatePreviewConfig.host_url) {
+                    showError('Отсутствуют обязательные параметры album_id или host_url');
                     return;
+                }
+                
+                try {
+                    pdfUrl = await generatePreview(generatePreviewConfig);
+                } catch (error) {
+                    console.error('Preview generation error:', error);
+                    // Продолжаем с URL который должен быть
+                    pdfUrl = `${generatePreviewConfig.host_url}/downloads/album_${generatePreviewConfig.album_id}.pdf`;
                 }
             } else {
                 // Декодируем обычный pdf_url
@@ -329,33 +322,22 @@
                 }
             }
             
-            // Получаем номер страницы из параметра
-            const startPage = getPageParameter();
-            currentPage = startPage;
-            
             // Загружаем PDF
-            await loadPdf(pdfUrl, startPage);
+            await loadPdf(pdfUrl);
         }
         
-        async function loadPdf(url, startPage = 1) {
+        async function loadPdf(url) {
             try {
-                enableBasicProtection();
                 updateStatus('Загрузка PDF...');
                 
-                const proxyUrl = createProxyUrl(url);
-                const loadingTask = pdfjsLib.getDocument(proxyUrl);
-                currentPdf = await loadingTask.promise;
-                
+                const startPage = getPageParameter();
+                currentPdf = await loadPdfThroughProxy(url);
                 pageCount = currentPdf.numPages;
                 
                 // Проверяем, что запрошенная страница существует
-                if (startPage < 1) {
-                    startPage = 1;
-                } else if (startPage > pageCount) {
-                    startPage = pageCount;
-                }
+                const validStartPage = Math.max(1, Math.min(startPage, pageCount));
                 
-                await renderPage(startPage);
+                await renderPage(validStartPage);
                 showControls();
                 
             } catch (error) {
