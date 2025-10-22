@@ -7,7 +7,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        /* Стили остаются без изменений */
         body, html {
             margin: 0;
             padding: 0;
@@ -187,7 +186,7 @@
             document.getElementById('statusText').textContent = message;
         }
         
-        // Упрощенная функция для API запросов
+        // Функция для API запросов
         async function makeApiRequest(url, method = 'GET') {
             const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
             
@@ -270,7 +269,7 @@
                 }
             }
             
-            return 1;
+            return 1; // По умолчанию первая страница
         }
         
         // Основная функция инициализации
@@ -298,6 +297,10 @@
             }
             
             enableBasicProtection();
+            
+            // Получаем номер стартовой страницы
+            const startPage = getPageParameter();
+            currentPage = startPage;
             
             // Если указан generatePreview, генерируем превью
             if (generatePreviewConfig) {
@@ -330,14 +333,17 @@
             try {
                 updateStatus('Загрузка PDF...');
                 
-                const startPage = getPageParameter();
                 currentPdf = await loadPdfThroughProxy(url);
                 pageCount = currentPdf.numPages;
                 
                 // Проверяем, что запрошенная страница существует
-                const validStartPage = Math.max(1, Math.min(startPage, pageCount));
+                if (currentPage < 1) {
+                    currentPage = 1;
+                } else if (currentPage > pageCount) {
+                    currentPage = pageCount;
+                }
                 
-                await renderPage(validStartPage);
+                await renderPage(currentPage);
                 showControls();
                 
             } catch (error) {
