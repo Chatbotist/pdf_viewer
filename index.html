@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        #pdfContainer {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            flex-direction: column;
+        }
+        
+        .canvas-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 95%;
+            max-height: 85%;
+        }
+        
+        .page-caption {
+            color: white;
+            font-size: 16px;
+            margin-bottom: 15px;
+            text-align: center;
+            padding: 5px 15px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 10px;
+        }
+        
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            font-size: 16px;
+            flex-direction: column;
+            gap: 10px;
+            color: white;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 20px;
+            display: flex;
+            gap: 40px;
+            align-items: center;
+            font-size: 14px;
+            min-width: 280px;
+            justify-content: space-between;
+        }
+        
+        .controls button {
+            background: #2c3e50;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            min-width: 80px;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .controls button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        #pageInfo {
+            font-size: 16px;
+            font-weight: bold;
+            min-width: 60px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        
+        .error {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+            flex-direction: column;
+        }
+        
+        .status-message {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ccc;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="pdfContainer" class="loading">
+        <div class="spinner"></div>
+        <div>Инициализация...</div>
+    </div>
+    
+    <div class="controls" id="controls" style="display: none;">
+        <button id="prevBtn" onclick="prevPage()">Назад</button>
+        <span id="pageInfo">1/1</span>
+        <button id="nextBtn" onclick="nextPage()">Дальше</button>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        let tg = null;
+        let isTelegram = false;
+        
+        if (window.Telegram && window.Telegram.WebApp) {
+            tg = window.Telegram.WebApp;
+            isTelegram = true;
+            tg.expand();
+            tg.enableClosingConfirmation();
+            tg.BackButton.show();
+            tg.BackButton.onClick(() => tg.close());
+            
+            // Используем встроенную защиту Telegram
+            document.body.style.backgroundColor = tg.themeParams.bg_color || '#000';
+        }
+
+        // Базовая защита (для браузера)
+        function enableBasicProtection() {
+            document.addEventListener('contextmenu', (e) => e.preventDefault());
+            document.addEventListener('selectstart', (e) => e.preventDefault());
+            document.addEventListener('dragstart', (e) => e.preventDefault());
+        }
+
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        let currentPdf = null;
+        let currentPage = 1;
+        let pageCount = 0;
+        
+        // Функция для создания прокси URL с обходом CORS
+        function createProxyUrl(pdfUrl) {
+            const encodedUrl = encodeURIComponent(pdfUrl);
+            return `/api/proxy?url=${encodedUrl}`;
+        }
+        
+        // Функция для выполнения API запроса через прокси
+        async function makeApiRequest(url, method = 'GET', body = null) {
+            try {
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+                
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                
+                if (body && (method === 'POST' || method === 'PUT')) {
+                    options.body = JSON.stringify(body);
+                }
+                
+                const response = await fetch(proxyUrl, options);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                console.error('API request error:', error);
+                throw error;
+            }
+        }
+        
+        // Функция для генерации превью
+        async function generatePreview(generatePreviewConfig) {
+            try {
+                updateStatus('Генерация превью...');
+                
+                const { album_id, host_url } = generatePreviewConfig;
+                const apiUrl = `${host_url}/api/v1/album/${album_id}/generate-preview`;
+                
+                await makeApiRequest(apiUrl, 'POST');
+                
+                updateStatus('Превью сгенерировано, загрузка PDF...');
+                
+                // Возвращаем URL для скачивания PDF
+                return `${host_url}/downloads/album_${album_id}.pdf`;
+                
+            } catch (error) {
+                console.error('Preview generation error:', error);
+                throw new Error('Не удалось сгенерировать превью');
+            }
+        }
+        
+        // Функция для обновления статуса загрузки
+        function updateStatus(message) {
+            const container = document.getElementById('pdfContainer');
+            if (container.querySelector('.status-message')) {
+                container.querySelector('.status-message').textContent = message;
+            } else {
+                const statusElement = document.createElement('div');
+                statusElement.className = 'status-message';
+                statusElement.textContent = message;
+                container.appendChild(statusElement);
+            }
+        }
+        
+        // Функция для создания подписи страницы
+        function createPageCaption(pageNum) {
+            const caption = document.createElement('div');
+            caption.className = 'page-caption';
+            
+            if (pageNum === 1) {
+                caption.textContent = "Разворот 1: страницы 1-2 (Обложки)";
+            } else {
+                const startPage = pageNum * 2 - 1;
+                const endPage = pageNum * 2;
+                caption.textContent = `Разворот ${pageNum}: страницы ${startPage}-${endPage}`;
+            }
+            
+            return caption;
+        }
+        
+        // Функция для получения параметра page из URL
+        function getPageParameter() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pageParam = urlParams.get('page');
+            
+            if (pageParam) {
+                const pageNum = parseInt(pageParam);
+                // Проверяем, что это валидное число и оно больше 0
+                if (!isNaN(pageNum) && pageNum > 0) {
+                    return pageNum;
+                }
+            }
+            
+            return 1; // По умолчанию первая страница
+        }
+        
+        // Основная функция инициализации
+        async function initialize() {
+            const urlParams = new URLSearchParams(window.location.search);
+            let pdfUrl = urlParams.get('pdf_url');
+            const generatePreviewParam = urlParams.get('generatePreview');
+            
+            let generatePreviewConfig = null;
+            
+            // Парсим параметр generatePreview если он есть
+            if (generatePreviewParam) {
+                try {
+                    generatePreviewConfig = JSON.parse(decodeURIComponent(generatePreviewParam));
+                } catch (e) {
+                    showError('Неверный формат параметра generatePreview');
+                    return;
+                }
+            }
+            
+            // Проверяем, что указан хотя бы один параметр
+            if (!pdfUrl && !generatePreviewConfig) {
+                showError('Ошибка: необходимо указать либо pdf_url, либо generatePreview параметр');
+                return;
+            }
+            
+            // Если указан generatePreview, генерируем превью и получаем URL PDF
+            if (generatePreviewConfig) {
+                try {
+                    if (!generatePreviewConfig.album_id || !generatePreviewConfig.host_url) {
+                        throw new Error('Отсутствуют обязательные параметры album_id или host_url');
+                    }
+                    
+                    pdfUrl = await generatePreview(generatePreviewConfig);
+                    
+                } catch (error) {
+                    showError(`Ошибка генерации превью: ${error.message}`);
+                    return;
+                }
+            } else {
+                // Декодируем обычный pdf_url
+                try {
+                    pdfUrl = decodeURIComponent(pdfUrl);
+                } catch (e) {
+                    // Если декодирование не удалось, используем оригинальный URL
+                }
+            }
+            
+            // Получаем номер страницы из параметра
+            const startPage = getPageParameter();
+            currentPage = startPage;
+            
+            // Загружаем PDF
+            await loadPdf(pdfUrl, startPage);
+        }
+        
+        async function loadPdf(url, startPage = 1) {
+            try {
+                enableBasicProtection();
+                updateStatus('Загрузка PDF...');
+                
+                const proxyUrl = createProxyUrl(url);
+                const loadingTask = pdfjsLib.getDocument(proxyUrl);
+                currentPdf = await loadingTask.promise;
+                
+                pageCount = currentPdf.numPages;
+                
+                // Проверяем, что запрошенная страница существует
+                if (startPage < 1) {
+                    startPage = 1;
+                } else if (startPage > pageCount) {
+                    startPage = pageCount;
+                }
+                
+                await renderPage(startPage);
+                showControls();
+                
+            } catch (error) {
+                console.error('Ошибка загрузки PDF:', error);
+                showError('Ошибка загрузки PDF. Файл может быть поврежден или недоступен.');
+            }
+        }
+        
+        async function renderPage(pageNum) {
+            if (!currentPdf || pageNum < 1 || pageNum > pageCount) return;
+            
+            const container = document.getElementById('pdfContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><div>Загрузка страницы...</div></div>';
+            
+            try {
+                const page = await currentPdf.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.8 });
+                
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                
+                await page.render(renderContext).promise;
+                
+                // Создаем обертку для canvas и подписи
+                const wrapper = document.createElement('div');
+                wrapper.className = 'canvas-wrapper';
+                
+                // Добавляем подпись
+                const caption = createPageCaption(pageNum);
+                wrapper.appendChild(caption);
+                wrapper.appendChild(canvas);
+                
+                container.innerHTML = '';
+                container.appendChild(wrapper);
+                
+                currentPage = pageNum;
+                updatePageInfo();
+                updateButtons();
+                
+            } catch (error) {
+                console.error('Ошибка рендеринга страницы:', error);
+                showError('Ошибка отображения страницы');
+            }
+        }
+        
+        function showControls() {
+            if (pageCount > 1) {
+                document.getElementById('controls').style.display = 'flex';
+            }
+        }
+        
+        function updatePageInfo() {
+            document.getElementById('pageInfo').textContent = `${currentPage}/${pageCount}`;
+        }
+        
+        function updateButtons() {
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = currentPage === pageCount;
+        }
+        
+        function nextPage() {
+            if (currentPage < pageCount) {
+                renderPage(currentPage + 1);
+            }
+        }
+        
+        function prevPage() {
+            if (currentPage > 1) {
+                renderPage(currentPage - 1);
+            }
+        }
+        
+        function showError(message) {
+            const container = document.getElementById('pdfContainer');
+            container.className = 'error';
+            container.innerHTML = `
+                <h3>Ошибка</h3>
+                <p>${message}</p>
+                <button onclick="window.location.reload()" style="padding: 10px 20px; margin-top: 10px; background: #2c3e50; color: white; border: none; border-radius: 5px; cursor: pointer;">Обновить</button>
+            `;
+        }
+        
+        // Навигация
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === 'PageDown') nextPage();
+            if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevPage();
+        });
+        
+        let touchStartX = 0;
+        document.addEventListener('touchstart', function(e) {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+        
+        document.addEventListener('touchend', function(e) {
+            const touchEndX = e.changedTouches[0].screenX;
+            const diffX = touchStartX - touchEndX;
+            
+            if (Math.abs(diffX) > 50) {
+                if (diffX > 0) nextPage();
+                else prevPage();
+            }
+        });
+        
+        // Запускаем инициализацию при загрузке страницы
+        document.addEventListener('DOMContentLoaded', initialize);
+    </script>
+</body>
+</html>
